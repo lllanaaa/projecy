@@ -79,12 +79,13 @@ def main():
     model = LogisticRegression1(learning_rate=0.01, n_iterations=1000)
 
     # model training
-    print(x_train)
-    print(y_train)
+    print(x_train.shape)
+    print(y_train.shape)
     model.fit(x_train, y_train)
 
     # prediction on test set
     y_pred = model.predict(x_test)
+    print(y_pred)
 
     # evaluation
     evaluation_model(y_pred, y_test)
