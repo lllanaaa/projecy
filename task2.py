@@ -11,6 +11,7 @@ import string
 import unidecode
 import numpy as np
 import time
+import pickle
 
 
 lemmatizer = WordNetLemmatizer()
@@ -91,28 +92,20 @@ def processDataRemoveStopword(data):
     return processedData
 
 
-def load_dataset():
-    print("load dataset")
-    start = time.time()
+def load_train_validation():
     df_train = pd.read_csv('dataset/train_data.tsv', sep='\t', header=0)
     df_validation = pd.read_csv('dataset/validation_data.tsv', sep='\t', header=0)
 
     # df_train = pd.read_csv('test_train_data.tsv', sep='\t', header=0)
     # df_validation = pd.read_csv('test_validation_data.tsv', sep='\t', header=0)
-    end = time.time()
-    print(end-start)
     return df_train, df_validation
 
 
 def load_word2vec_model():
-    print("load word2vec")
-    start = time.time()
-    word2vec_model = gensim.models.KeyedVectors.load_word2vec_format('GoogleNews-vectors-negative300.bin', binary=True)
+    word2vec_model = gensim.models.KeyedVectors.load_word2vec_format('GoogleNews-vectors-negative300.bin', limit=10000, binary=True)
     # print(word2vec_model['hello'].shape)
     # print(word2vec_model['hello'])
     # print(word2vec_model.similar_by_word('hello', topn=5))
-    end = time.time()
-    print(end - start)
     return word2vec_model
 
 
@@ -141,60 +134,77 @@ def sentence_embedding(sentence, word2vec_model):
 
 
 
-# train validation
-def data_preprocess(df_train, df_validation):
+# train
+def data_preprocess_train(df_train_query, df_train_passage):
     # load word2vec model
     word2vec_model = load_word2vec_model()
 
     # train data
-    df_train_query = df_train[['qid', 'queries']]
-    df_train_query.drop_duplicates(subset=['queries'], keep='first', inplace=True)
-    df_train_passage = df_train[['pid', 'passage']]
-    df_train_passage.drop_duplicates(subset=['passage'], keep='first', inplace=True)
+    # df_train_query = df_train[['qid', 'queries']]
+    # df_train_query.drop_duplicates(subset=['queries'], keep='first', inplace=True)
+    # df_train_passage = df_train[['pid', 'passage']]
+    # df_train_passage.drop_duplicates(subset=['passage'], keep='first', inplace=True)
 
-    # validation data
-    df_validation_query = df_validation[['qid', 'queries']]
-    df_validation_query.drop_duplicates(subset=['queries'], keep='first', inplace=True)
-    df_validation_passage = df_validation[['pid', 'passage']]
-    df_validation_passage.drop_duplicates(subset=['passage'], keep='first', inplace=True)
-
-    # 把train和validation的所有sentence都存在这里
-    dict = {}
+    # df_train_query.to_csv('datasets_processed/train_query.csv')
+    # df_train_passage.to_csv('datasets_processed/train_passage.csv')
 
     # train data
-    # query
-    for index, row in df_train_query.iterrows():
-        qid = row['qid']
-        query = row['queries']
-        vector_term_in_query = sentence_embedding(query, word2vec_model)
-        dict[int(qid)] = vector_term_in_query
-    # passage
-    for index, row in df_train_passage.iterrows():
+    # df_query = df_train_query
+    df_passage = df_train_passage
+    dict_q = {}
+    dict_p = {}
+    # for index, row in df_query.iterrows():
+    #     qid = row['qid']
+    #     query = row['queries']
+    #     vector_term_in_query = sentence_embedding(query, word2vec_model)
+    #     dict_q[qid] = vector_term_in_query
+    # with open('datasets_processed/train_query_vector.pickle', 'wb') as file:
+    #     pickle.dump(dict_q, file)
+    for index, row in df_passage.iterrows():
         pid = row['pid']
         passage = row['passage']
         vector_term_in_passage = sentence_embedding(passage, word2vec_model)
-        dict[int(pid)] = vector_term_in_passage
+        dict_p[pid] = vector_term_in_passage
+    with open('datasets_processed/train_passage_vector.pickle', 'wb') as file:
+        pickle.dump(dict_p, file)
+
+
+# validation
+def data_preprocess_validation(df_validation_query, df_validation_passage):
+    # load word2vec model
+    word2vec_model = load_word2vec_model()
 
     # validation data
-    # query
-    for index, row in df_validation_query.iterrows():
+    # df_validation_query = df_validation[['qid', 'queries']]
+    # df_validation_query.drop_duplicates(subset=['queries'], keep='first', inplace=True)
+    # df_validation_passage = df_validation[['pid', 'passage']]
+    # df_validation_passage.drop_duplicates(subset=['passage'], keep='first', inplace=True)
+
+    # df_validation_query.to_csv('datasets_processed/validation_query.csv')
+    # df_validation_passage.to_csv('datasets_processed/validation_passage.csv')
+
+    # validation data
+    df_query = df_validation_query
+    df_passage = df_validation_passage
+    dict_q = {}
+    dict_p = {}
+    for index, row in df_query.iterrows():
         qid = row['qid']
         query = row['queries']
-        if int(qid) not in dict:
-            vector_term_in_query = sentence_embedding(query, word2vec_model)
-            dict[int(qid)] = vector_term_in_query
-    # passage
-    for index, row in df_validation_passage.iterrows():
+        vector_term_in_query = sentence_embedding(query, word2vec_model)
+        dict_q[qid] = vector_term_in_query
+    with open('datasets_processed/validation_query_vector.pickle', 'wb') as file:
+        pickle.dump(dict_q, file)
+    for index, row in df_passage.iterrows():
         pid = row['pid']
         passage = row['passage']
-        if int(pid) not in dict:
-            vector_term_in_passage = sentence_embedding(passage, word2vec_model)
-            dict[int(pid)] = vector_term_in_passage
+        vector_term_in_passage = sentence_embedding(passage, word2vec_model)
+        dict_p[pid] = vector_term_in_passage
+    with open('datasets_processed/validation_passage_vector.pickle', 'wb') as file:
+        pickle.dump(dict_p, file)
 
-    return dict
 
-
-def process_model_input(df_train, data_dict):
+def process_model_input(df_train, train_query, train_passage):
     x = np.zeros([1, 600])
     y = np.zeros([1, 1])
     flag = 0
@@ -204,8 +214,8 @@ def process_model_input(df_train, data_dict):
         pid = row['pid']
         relevancy = row['relevancy']
 
-        vec_query = data_dict[int(qid)]
-        vec_passage = data_dict[int(pid)]
+        vec_query = train_query[int(qid)]
+        vec_passage = train_passage[int(pid)]
         vec_query_passage = np.concatenate((vec_query, vec_passage))
         vec_query_passage = vec_query_passage.reshape(1, 600)
 
@@ -234,28 +244,46 @@ def evaluation_model(y_pred, y_test):
             correctly_classified / count) * 100)
 
 
+def load_train_pickle():
+    with open('datasets_processed/train_passage_vector.pickle', 'rb') as f:
+        dict_p = pickle.load(f)
+    with open('datasets_processed/train_query_vector.pickle', 'rb') as f:
+        dict_q = pickle.load(f)
+    return dict_p, dict_q
+
+
+
 def main():
-    # 1. load dataset: train_data.tsv validation_data.tsv
-    df_train, df_validation = load_dataset()
+    # 1. load dataset, save query/passage vector to pickle file
+    # df_train, df_validation = load_train_validation()
+    df_train_query = pd.read_csv('datasets_processed/train_query.csv', sep=',', header=0)
+    df_train_passage = pd.read_csv('datasets_processed/train_passage.csv', sep=',', header=0)
+    data_preprocess_train(df_train_query, df_train_passage)
+    df_validation_query = pd.read_csv('datasets_processed/validation_query.csv', sep=',', header=0)
+    df_validation_passage = pd.read_csv('datasets_processed/validation_passage.csv', sep=',', header=0)
+    data_preprocess_validation(df_validation_query, df_validation_passage)
+    print("已经预处理完模型")
 
-    # 2. represent query - passage using word embedding (average embedding)
-    data_dict = data_preprocess(df_train, df_validation)
+    # # 2. load pickle file, process them to model input
+    # train_passage_vector, train_query_vector = load_train_pickle()
+    #
+    # # df_train = df_train[['qid', 'pid', 'relevancy']]
+    # # x_train, y_train = process_model_input(df_train, train_query, train_passage)
+    # df_train_test = pd.read_csv('test_train_data.tsv', sep='\t', header=0)
+    # df_train_test = df_train_test[['qid', 'pid', 'relevancy']]
+    # x_train_test, y_train_test = process_model_input(df_train_test, train_query_vector, train_passage_vector)
+    #
+    # df_validation = df_validation[['qid', 'pid', 'relevancy']]
+    # x_validation, y_validation = process_model_input(df_validation, train_query_vector, train_passage_vector)
+    #
+    # # 3. implement a logistic regression model, query and passage embedding as input
+    # model = LogisticRegression1(learning_rate=0.01, n_iterations=100)
+    # model.fit(x_train_test, y_train_test)
+    # y_pred = model.predict(x_validation)
+    #
+    # # 4. evaluation mAP / NDCG
+    # evaluation_model(y_pred, y_validation)
 
-    # 3. implement a logistic regression model, query and passage embedding as input
-    x_train, y_train = process_model_input(df_train, data_dict)
-    x_validation, y_validation = process_model_input(df_validation, data_dict)
-    print(x_train.shape)
-    print(y_train.shape)
-    print(x_validation.shape)
-    print(y_validation.shape)
-
-    model = LogisticRegression1(learning_rate=0.01, n_iterations=100)
-    model.fit(x_train, y_train)
-    y_pred = model.predict(x_validation)
-    print(y_pred)
-
-    # 4. assess relevance of query - passage -> AP and NDCG
-    evaluation_model(y_pred, y_validation)
 
 
 pd.set_option('display.width', None)

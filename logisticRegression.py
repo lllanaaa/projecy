@@ -142,9 +142,9 @@ def sentence_embedding(sentence, word2vec_model):
 
     return vec
 
-def data_preprocess_query_passage(df_query,df_passage):
+def data_preprocess_query_passage(df_query, df_passage):
 
-    word2vec_model  = load_word2vec_model()
+    word2vec_model = load_word2vec_model()
     dict_q = {}
     dict_p = {}
     for index, row in df_query.iterrows():
@@ -268,7 +268,7 @@ def load_dataset_csv():
     # df_passage = pd.read_csv('dataset/train_passage_data.csv')
     end = time.time()
     print(end - start)
-    return df_query,df_passage
+    return df_query, df_passage
 
 def load_pickle():
     print("load pickle")
@@ -285,7 +285,7 @@ def load_pid_qid_r():
     print("load dataset")
     start = time.time()
     df_validation = pd.read_csv('dataset/validation_data.tsv', sep='\t', header=0)
-    df_train = df_validation[['qid', 'pid','relevancy']]
+    df_train = df_validation[['qid', 'pid', 'relevancy']]
     end = time.time()
     print(end-start)
     return df_train
