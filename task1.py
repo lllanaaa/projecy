@@ -10,6 +10,8 @@ import re
 import string
 import unidecode
 import math
+import matplotlib.pyplot as plt
+import numpy as np
 
 
 
@@ -103,69 +105,6 @@ def inverted_index(all_query, all_passage):
     return vocal_dict, average_passage_len
 
 
-def calculate_precision(bm_df, k):
-    df = bm_df.iloc[:k]
-    df_relevant = df.loc[df['relevancy'] == 1.0]
-    sum = 0
-    num = 0
-    for index, row in df_relevant.iterrows():
-        num += 1
-        sum += num / (index + 1)
-    if num == 0:
-        return 0
-    ap = sum / num
-    return ap
-
-
-def calculate_DCG(bm_df, k):
-    df = bm_df.iloc[:k]
-    sum = 0
-    for index, row in df.iterrows():
-        sum += (pow(2, row['relevancy']) - 1) / math.log2(1 + (index+1))
-
-    return sum
-
-
-def load_bm25_model(df_validation_query_passage, df_validation_query, inverted_index_dict, average_passage_len):
-    k1 = 1.2
-    k2 = 100
-    b = 0.75
-
-    average_precision_array = []
-    DCG_array = []
-
-    # 遍历query的列表
-    for index, row in df_validation_query.iterrows():
-        res = []
-        qid = row['qid']
-        query = row['queries']
-        # 根据每个query获得 对应的 passage 和 relevancy
-        passages = df_validation_query_passage.loc[df_validation_query_passage['qid'] == qid, ['pid', 'passage', 'relevancy']]
-        for i, r in passages.iterrows():
-            pid = r['pid']
-            passage = r['passage']
-            relevancy = r['relevancy']
-            # 针对每个query - passage 计算BM25 score
-            score = calculate_bm25_score(query, passage, inverted_index_dict, k1, k2, b, average_passage_len)
-            row['score'] = score
-            res.append([qid, pid, score, relevancy])
-        bm_df = pd.DataFrame(res, columns=['qid', 'pid', 'score', 'relevancy']).sort_values(by='score', ascending=False, ignore_index=True)
-
-        # 对每个query 计算mean average precision
-        precision3 = calculate_precision(bm_df, 3)
-        precision10 = calculate_precision(bm_df, 10)
-        precision100 = calculate_precision(bm_df, 100)
-        average_precision_array.append([precision3, precision10, precision100])
-
-        # 计算DCG
-        DCG3 = calculate_DCG(bm_df, 3)
-        DCG10 = calculate_DCG(bm_df, 10)
-        DCG100 = calculate_DCG(bm_df, 100)
-        DCG_array.append([DCG3, DCG10, DCG100])
-
-    return average_precision_array, DCG_array
-
-
 def calculate_bm25_score(query, passage, inverted_index_dict, k1, k2, b, avdl):
     query_terms = processDataRemoveStopword([query])[0]
     passage_terms = processDataRemoveStopword([passage])[0]
@@ -186,6 +125,89 @@ def calculate_bm25_score(query, passage, inverted_index_dict, k1, k2, b, avdl):
     return value
 
 
+def load_bm25_model(df_validation_query_passage, df_validation_query, inverted_index_dict, average_passage_len):
+    k1 = 1.2
+    k2 = 100
+    b = 0.75
+
+    average_precision_array = []
+    NDCG_array = []
+
+    # 遍历query的列表
+    for index, row in df_validation_query.iterrows():
+        res = []
+        qid = row['qid']
+        query = row['queries']
+        # 根据每个query获得 对应的 passage 和 relevancy
+        passages = df_validation_query_passage.loc[df_validation_query_passage['qid'] == qid, ['pid', 'passage', 'relevancy']]
+        for i, r in passages.iterrows():
+            pid = r['pid']
+            passage = r['passage']
+            relevancy = r['relevancy']
+            # 针对每个query - passage 计算BM25 score
+            score = calculate_bm25_score(query, passage, inverted_index_dict, k1, k2, b, average_passage_len)
+            row['score'] = score
+            res.append([qid, pid, score, relevancy])
+
+        # 对每个query的df 按照score排序
+        bm_df = pd.DataFrame(res, columns=['qid', 'pid', 'score', 'relevancy']).sort_values(by='score', ascending=False, ignore_index=True)
+
+        rows = bm_df.shape[0]
+        arr_ap = []
+        for i in range(rows):
+            arr_ap.append(calculate_average_precision(bm_df, i+1))
+        average_precision_array.append(arr_ap)
+
+        # # 对每个query 计算 average precision
+        # precision3 = calculate_average_precision(bm_df, 3)
+        # precision10 = calculate_average_precision(bm_df, 10)
+        # precision100 = calculate_average_precision(bm_df, 100)
+        # average_precision_array.append([precision3, precision10, precision100])
+
+        arr_ndcg = []
+        for i in range(rows):
+            arr_ndcg.append(calculate_NDCG(bm_df, i+1))
+        NDCG_array.append(arr_ndcg)
+
+        # # 计算 NDCG
+        # NDCG3 = calculate_NDCG(bm_df, 3)
+        # NDCG10 = calculate_NDCG(bm_df, 10)
+        # NDCG100 = calculate_NDCG(bm_df, 100)
+        # NDCG_array.append([NDCG3, NDCG10, NDCG100])
+
+    return average_precision_array, NDCG_array
+
+
+def calculate_average_precision(bm_df, k):
+    df = bm_df.iloc[:k]
+    df_relevant = df.loc[df['relevancy'] == 1.0]
+    sum = 0
+    num = 0
+    for index, row in df_relevant.iterrows():
+        num += 1
+        sum += num / (index + 1)
+    if num == 0:
+        return 0
+    ap = sum / num
+    return ap
+
+
+def calculate_NDCG(bm_df, k):
+    df = bm_df.iloc[:k]
+    dcg = 0
+    for index, row in df.iterrows():
+        dcg += (pow(2, row['relevancy']) - 1) / math.log2(1 + (index + 1))
+
+    idcg_df = bm_df.sort_values(by='relevancy', ascending=False, ignore_index=True).iloc[:k]
+    idcg = 0
+    for index, row in idcg_df.iterrows():
+        value = (pow(2, row['relevancy']) - 1) / math.log2(1 + (index + 1))
+        if value > 0:
+            idcg += value
+
+    return dcg / idcg
+
+
 
 def main():
     # 加载dataset：
@@ -193,44 +215,68 @@ def main():
     # 根据dataset 获得inverted index
     inverted_index_dict, average_passage_len = inverted_index(df_validation_query, df_validation_passage)
 
-    # 根据ap的list计算map
-    average_precision_array, DCG_array = load_bm25_model(df_validation_query_passage, df_validation_query, inverted_index_dict, average_passage_len)
-    ap3 = 0
-    ap10 = 0
-    ap100 = 0
-    size = len(average_precision_array)
-    for ap in average_precision_array:
-        ap3 += ap[0]
-        ap10 += ap[0]
-        ap100 += ap[0]
-    map3 = ap3 / size
-    map10 = ap10 / size
-    map100 = ap100 / size
+    # 根据每个query计算
+    average_precision_array, NDCG_array = load_bm25_model(df_validation_query_passage, df_validation_query, inverted_index_dict, average_passage_len)
 
-    # 根据DCG 计算NDCG
-    dcg3_max = 0
-    dcg10_max = 0
-    dcg100_max = 0
-    for ap in average_precision_array:
-        if ap[0] >= dcg3_max:
-            dcg3_max = ap[0]
-        if ap[1] >= dcg10_max:
-            dcg10_max = ap[1]
-        if ap[2] >= dcg100_max:
-            dcg100_max = ap[2]
-    dcg3 = 0
-    dcg10 = 0
-    dcg100 = 0
-    for ap in average_precision_array:
-        dcg3 += ap[0] / dcg3_max
-        dcg10 += ap[1] / dcg10_max
-        dcg100 += ap[2] / dcg100_max
-    ndcg3 = dcg3 / size
-    ndcg10 = dcg10 / size
-    ndcg100 = dcg100 / size
+    # plot
+    x_k = np.array(range(1, 1001))
+    map = []
+    for i in range(1000):
+        sum = 0
+        num = 0
+        for item in average_precision_array:
+            if i <= len(item)-1:
+                sum += item[i]
+                num += 1
+        value = sum / num
+        map.append(value)
+    y_map = np.array(map)
+    mndcg = []
+    for i in range(1000):
+        sum = 0
+        num = 0
+        for item in NDCG_array:
+            if i <= len(item)-1:
+                sum += item[i]
+                num += 1
+        value = sum / num
+        mndcg.append(value)
+    y_mndcg = np.array(mndcg)
 
-    print("mAP@3:", map3, " mAP@10:", map10, " mAP@100:", map100)
-    print("NDCG@3:", ndcg3, " NDCG@10:", ndcg10, " NDCG@100:", ndcg100)
+    plt.title("BM25 Evaluation using AP and NDCG metrics")
+    plt.plot(x_k, y_map, label='mean average precision')
+    plt.plot(x_k, y_mndcg, label='mean NDCG')
+    plt.xlabel('k')
+    plt.ylabel('value')
+    plt.legend()
+    plt.show()
+
+    # ap3 = 0
+    # ap10 = 0
+    # ap100 = 0
+    # size = len(average_precision_array)
+    # for ap in average_precision_array:
+    #     ap3 += ap[0]
+    #     ap10 += ap[1]
+    #     ap100 += ap[2]
+    # map3 = ap3 / size
+    # map10 = ap10 / size
+    # map100 = ap100 / size
+    #
+    # # 根据DCG 计算NDCG
+    # dcg3 = 0
+    # dcg10 = 0
+    # dcg100 = 0
+    # for ndcg in NDCG_array:
+    #     dcg3 += ndcg[0]
+    #     dcg10 += ndcg[1]
+    #     dcg100 += ndcg[2]
+    # ndcg3 = dcg3 / size
+    # ndcg10 = dcg10 / size
+    # ndcg100 = dcg100 / size
+    #
+    # print("mAP@3:", map3, " mAP@10:", map10, " mAP@100:", map100)
+    # print("NDCG@3:", ndcg3, " NDCG@10:", ndcg10, " NDCG@100:", ndcg100)
 
 
 pd.set_option('display.width', None)
